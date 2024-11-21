@@ -19,31 +19,29 @@ type Point struct {
 	Longitude float64
 }
 
+type Result struct {
+	Data1Name string
+	Lat1      float64
+	Lon1      float64
+	Data2Name string
+	Lat2      float64
+	Lon2      float64
+	Distance  float64
+}
+
 // Fungsi utama
 func main() {
-	// Catat waktu mulai eksekusi
 	startTime := time.Now()
 
 	// Maksimalkan penggunaan CPU
 	numCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(numCPU) // Gunakan semua core CPU yang tersedia
+	runtime.GOMAXPROCS(numCPU)
 	fmt.Printf("Menggunakan %d core CPU\n", numCPU)
 
 	// Nama file input dan output
 	data1File := "data1.csv"
 	data2File := "data2.csv"
-	outputFile := "nearest_points.csv"
-
-	// Ambil radius maksimal dari argumen baris perintah
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <radius>")
-		return
-	}
-	maxRadius, err := strconv.ParseFloat(os.Args[1], 64)
-	if err != nil {
-		fmt.Println("Gagal membaca input radius: ", err)
-		return
-	}
+	outputFile := "all_combinations_distances.csv"
 
 	// Membaca data input
 	data1, err := loadCSVWithAutoSeparator(data1File)
@@ -58,21 +56,27 @@ func main() {
 		return
 	}
 
-	// Membuat channel untuk hasil dengan kapasitas buffer
-	results := make(chan []string, len(data1))
+	// Channel untuk hasil
+	results := make(chan Result, len(data1)*len(data2))
 
 	// Worker pool untuk memproses data secara paralel
 	var wg sync.WaitGroup
 	numWorkers := 8
+	chunkSize := len(data1) / numWorkers
 	for i := 0; i < numWorkers; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if i == numWorkers-1 {
+			end = len(data1)
+		}
 		wg.Add(1)
-		go worker(data1, data2, maxRadius, results, &wg)
+		go worker(data1[start:end], data2, results, &wg)
 	}
 
 	// Tunggu semua worker selesai
 	go func() {
 		wg.Wait()
-		close(results) // Tutup channel setelah semua worker selesai
+		close(results)
 	}()
 
 	// Tulis hasil ke file output
@@ -81,18 +85,12 @@ func main() {
 		return
 	}
 
-	// Catat waktu selesai eksekusi
-	endTime := time.Now()
-
-	// Hitung lama waktu eksekusi
-	duration := endTime.Sub(startTime)
-
-	// Tampilkan informasi hasil
+	duration := time.Since(startTime)
 	fmt.Printf("Proses selesai. File output tersimpan di %s.\n", outputFile)
 	fmt.Printf("Lama waktu eksekusi: %s\n", duration)
 }
 
-// Fungsi untuk membaca file CSV dengan deteksi separator otomatis
+// Fungsi untuk membaca file CSV dengan separator otomatis
 func loadCSVWithAutoSeparator(filePath string) ([]Point, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -100,7 +98,6 @@ func loadCSVWithAutoSeparator(filePath string) ([]Point, error) {
 	}
 	defer file.Close()
 
-	// Deteksi separator dari beberapa baris pertama
 	buf := make([]byte, 1024)
 	n, err := file.Read(buf)
 	if err != nil && err != io.EOF {
@@ -115,13 +112,11 @@ func loadCSVWithAutoSeparator(filePath string) ([]Point, error) {
 		separator = ','
 	}
 
-	// Reset file pointer ke awal
 	_, err = file.Seek(0, io.SeekStart)
 	if err != nil {
 		return nil, err
 	}
 
-	// Membaca file dengan separator yang terdeteksi
 	reader := csv.NewReader(file)
 	reader.Comma = separator
 	rows, err := reader.ReadAll()
@@ -140,42 +135,28 @@ func loadCSVWithAutoSeparator(filePath string) ([]Point, error) {
 }
 
 // Worker untuk memproses data secara paralel
-func worker(data1, data2 []Point, maxRadius float64, results chan []string, wg *sync.WaitGroup) {
-	defer wg.Done() // Pastikan WaitGroup selesai
+func worker(data1, data2 []Point, results chan Result, wg *sync.WaitGroup) {
+	defer wg.Done()
 
 	for _, p1 := range data1 {
-		nearest, distance := findNearestWithinRadius(p1, data2, maxRadius)
-		if nearest != nil {
-			results <- []string{
-				p1.Name,
-				fmt.Sprintf("%.6f", p1.Latitude),
-				fmt.Sprintf("%.6f", p1.Longitude),
-				nearest.Name,
-				fmt.Sprintf("%.6f", nearest.Latitude),
-				fmt.Sprintf("%.6f", nearest.Longitude),
-				fmt.Sprintf("%.2f", distance),
+		for _, p2 := range data2 {
+			distance := haversine(p1.Latitude, p1.Longitude, p2.Latitude, p2.Longitude)
+			results <- Result{
+				Data1Name: p1.Name,
+				Lat1:      p1.Latitude,
+				Lon1:      p1.Longitude,
+				Data2Name: p2.Name,
+				Lat2:      p2.Latitude,
+				Lon2:      p2.Longitude,
+				Distance:  distance,
 			}
 		}
 	}
 }
 
-// Fungsi untuk mencari titik terdekat dalam radius maksimal
-func findNearestWithinRadius(p1 Point, data2 []Point, maxRadius float64) (*Point, float64) {
-	var nearest *Point
-	minDistance := math.MaxFloat64
-	for _, p2 := range data2 {
-		distance := haversine(p1.Latitude, p1.Longitude, p2.Latitude, p2.Longitude)
-		if distance <= maxRadius && distance < minDistance {
-			minDistance = distance
-			nearest = &p2
-		}
-	}
-	return nearest, minDistance
-}
-
 // Fungsi Haversine untuk menghitung jarak
 func haversine(lat1, lon1, lat2, lon2 float64) float64 {
-	const R = 6371000 // Radius bumi dalam meter
+	const R = 6371000
 	lat1Rad, lon1Rad := lat1*math.Pi/180, lon1*math.Pi/180
 	lat2Rad, lon2Rad := lat2*math.Pi/180, lon2*math.Pi/180
 
@@ -190,7 +171,7 @@ func haversine(lat1, lon1, lat2, lon2 float64) float64 {
 }
 
 // Fungsi untuk menulis hasil ke file output
-func writeResults(filePath string, results chan []string) error {
+func writeResults(filePath string, results chan Result) error {
 	file, err := os.Create(filePath)
 	if err != nil {
 		return err
@@ -202,13 +183,20 @@ func writeResults(filePath string, results chan []string) error {
 
 	// Tulis header
 	writer.Write([]string{
-		"nama_titik_data1", "latitude_data1", "longitude_data1",
-		"nama_titik_terdekat_data2", "latitude_terdekat_data2", "longitude_terdekat_data2", "distance_meters",
+		"data1_name", "lat1", "lon1", "data2_name", "lat2", "lon2", "distance_meters",
 	})
 
 	// Tulis hasil
 	for result := range results {
-		writer.Write(result)
+		writer.Write([]string{
+			result.Data1Name,
+			fmt.Sprintf("%.6f", result.Lat1),
+			fmt.Sprintf("%.6f", result.Lon1),
+			result.Data2Name,
+			fmt.Sprintf("%.6f", result.Lat2),
+			fmt.Sprintf("%.6f", result.Lon2),
+			fmt.Sprintf("%.2f", result.Distance),
+		})
 	}
 
 	return nil
