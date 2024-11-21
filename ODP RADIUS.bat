@@ -37,9 +37,9 @@ echo Sedang memproses data...
 go run main.go %radiusInput%
 
 REM Cek apakah file output berhasil dibuat
-if exist "nearest_points.csv" (
+if exist "all_combinations_distances.csv" (
     echo.
-    echo [SUCCESS] Proses selesai. File output bernama nearest_points.csv berhasil dibuat.
+    echo [SUCCESS] Proses selesai. File output bernama all_combinations_distances.csv berhasil dibuat.
     echo.
 ) else (
     echo.
