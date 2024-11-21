@@ -41,7 +41,7 @@ func main() {
 	}
 	maxRadius, err := strconv.ParseFloat(os.Args[1], 64)
 	if err != nil {
-		fmt.Println("Gagal membaca input radius:", err)
+		fmt.Println("Gagal membaca input radius: ", err)
 		return
 	}
 
