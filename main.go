@@ -29,6 +29,8 @@ type Result struct {
 	Distance  float64
 }
 
+var maxRadius float64
+
 // Fungsi utama
 func main() {
 	startTime := time.Now()
@@ -37,6 +39,19 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 	fmt.Printf("Menggunakan %d core CPU\n", numCPU)
+
+	// Tangkap input radius dari argumen
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run main.go <radius>")
+		return
+	}
+	var err error
+	maxRadius, err = strconv.ParseFloat(os.Args[1], 64)
+	if err != nil {
+		fmt.Println("Gagal membaca input radius:", err)
+		return
+	}
+	fmt.Printf("Radius maksimal yang digunakan: %.2f meter\n", maxRadius)
 
 	// Nama file input dan output
 	data1File := "data1.csv"
@@ -186,17 +201,19 @@ func writeResults(filePath string, results chan Result) error {
 		"data1_name", "lat1", "lon1", "data2_name", "lat2", "lon2", "distance_meters",
 	})
 
-	// Tulis hasil
+	// Tulis hasil hanya jika jaraknya <= radius
 	for result := range results {
-		writer.Write([]string{
-			result.Data1Name,
-			fmt.Sprintf("%.6f", result.Lat1),
-			fmt.Sprintf("%.6f", result.Lon1),
-			result.Data2Name,
-			fmt.Sprintf("%.6f", result.Lat2),
-			fmt.Sprintf("%.6f", result.Lon2),
-			fmt.Sprintf("%.2f", result.Distance),
-		})
+		if result.Distance <= maxRadius {
+			writer.Write([]string{
+				result.Data1Name,
+				fmt.Sprintf("%.6f", result.Lat1),
+				fmt.Sprintf("%.6f", result.Lon1),
+				result.Data2Name,
+				fmt.Sprintf("%.6f", result.Lat2),
+				fmt.Sprintf("%.6f", result.Lon2),
+				fmt.Sprintf("%.2f", result.Distance),
+			})
+		}
 	}
 
 	return nil
